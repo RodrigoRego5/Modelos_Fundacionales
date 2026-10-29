@@ -28,6 +28,11 @@ def evaluate_model(model, X_test, y_test, threshold=None):
     y_test_binary = (y_test == positive_class).astype(int)
     y_pred_binary = (y_pred == positive_class).astype(int)
 
+    return binary_metrics(y_test_binary, y_pred_binary, y_prob)
+
+
+def binary_metrics(y_test_binary, y_pred_binary, y_prob):
+    """The same six metrics for ordinary runs, CV candidates and final test."""
     precision_curve, recall_curve, _ = precision_recall_curve(
         y_test_binary, y_prob
     )

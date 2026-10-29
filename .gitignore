@@ -6,4 +6,4 @@ mlruns/
 mlartifacts/
 mlflow.db*
 .ipynb_checkpoints/
-framhingam.ipynb*
+framhingam.ipynb*   

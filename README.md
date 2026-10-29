@@ -104,6 +104,10 @@ La búsqueda aleatoria valida los candidatos con
 CV estratificada; la limpieza e imputación se ajustan dentro de cada fold.
 MLflow registra un run principal y un run hijo por candidato. El mejor modelo se
 reentrena con todo el entrenamiento y solo entonces se evalúa en test.
+Ambos tipos de run muestran `recall`, `f1`, `roc_auc`, `pr_auc`,
+`balanced_accuracy` y `precision`, igual que una ejecución normal. En los hijos
+son medias de validación cruzada; en el principal son las únicas métricas
+mostradas y corresponden al test final. El umbral elegido se registra como parámetro.
 
 ```python
 from src.optimization import optimize_experiment
@@ -138,8 +142,9 @@ print(resultado["test_tuned"])
 
 `min_precision=None` omite el ajuste del umbral. Con un valor entre 0 y 1, el
 umbral se selecciona usando probabilidades out-of-fold para maximizar recall
-sujeto a esa precisión mínima. Se registran métricas de test con el umbral
-predeterminado y el ajustado; el test nunca decide parámetros ni umbral.
+sujeto a esa precisión mínima. El test nunca decide parámetros ni umbral.
+Si se ajusta el umbral, las métricas sin prefijo del run principal corresponden
+al umbral ajustado; la comparación sin ajuste queda en `selection.json`.
 Para TabPFN, usar pocos candidatos/folds por sus llamadas remotas.
 
 ### 4. Consultar resultados

@@ -12,10 +12,9 @@ from sklearn.model_selection import (
     ParameterSampler,
     StratifiedKFold,
     cross_val_predict,
-    cross_val_score,
 )
 
-from .evaluation import evaluate_model
+from .evaluation import binary_metrics, evaluate_model
 from .preprocessing import build_dataset_pipeline
 
 
@@ -97,14 +96,26 @@ def optimize_experiment(
             )
             started = perf_counter()
             with mlflow.start_run(run_name=f"candidate_{index:03d}", nested=True) as child:
-                mlflow.set_tags({"stage": "candidate", "dataset": dataset})
+                mlflow.set_tags({"stage": "candidate", "dataset": dataset,
+                                 "metrics_source": "cross_validation_mean"})
                 mlflow.log_params(params)
-                scores = cross_val_score(
-                    estimator, X_train, y_train, cv=cv,
-                    scoring="average_precision", n_jobs=1, error_score="raise",
-                )
+                fold_metrics = []
+                scores = []
+                for train_indices, validation_indices in cv.split(X_train, y_train):
+                    fitted = clone(estimator).fit(
+                        X_train.iloc[train_indices], y_train.iloc[train_indices]
+                    )
+                    X_validation = X_train.iloc[validation_indices]
+                    y_validation = y_train.iloc[validation_indices]
+                    probabilities = fitted.predict_proba(X_validation)[:, 1]
+                    predictions = fitted.predict(X_validation)
+                    fold_metrics.append(binary_metrics(y_validation, predictions, probabilities))
+                    scores.append(average_precision_score(y_validation, probabilities))
                 elapsed = perf_counter() - started
                 mean_score = float(np.mean(scores))
+                # Standard names are means over validation folds, not test scores.
+                mlflow.log_metrics({key: float(np.mean([fold[key] for fold in fold_metrics]))
+                                    for key in fold_metrics[0]})
                 mlflow.log_metrics({
                     "cv_average_precision_mean": mean_score,
                     "cv_average_precision_std": float(np.std(scores)),
@@ -125,22 +136,24 @@ def optimize_experiment(
             oof = cross_val_predict(selected, X_train, y_train, cv=cv,
                                     method="predict_proba", n_jobs=1)[:, 1]
             threshold_result = optimize_threshold(y_train, oof, min_precision)
-            mlflow.log_metric("cv_average_precision_oof", float(average_precision_score(y_train, oof)))
-            mlflow.log_metrics(threshold_result)
+            mlflow.log_param("decision_threshold", threshold_result["threshold"])
 
         selected.fit(X_train, y_train)
         default_metrics = evaluate_model(selected, X_test, y_test)
-        mlflow.log_metrics({f"test_default_{key}": value for key, value in default_metrics.items()})
         tuned_metrics = None
         if threshold_result is not None:
             tuned_metrics = evaluate_model(selected, X_test, y_test,
                                            threshold=threshold_result["threshold"])
-            mlflow.log_metrics({f"test_tuned_{key}": value for key, value in tuned_metrics.items()})
-        mlflow.log_metric("best_cv_average_precision", best["mean"])
+        # Only the six final test metrics are shown on the parent run.
+        # When tuned, these reflect the selected threshold.
+        mlflow.log_metrics(tuned_metrics if tuned_metrics is not None else default_metrics)
+        mlflow.set_tag("metrics_source", "test_tuned" if tuned_metrics is not None
+                       else "test_default")
         mlflow.set_tag("best_child_run_id", best["run_id"])
         mlflow.log_dict({"candidates": history}, "search_results.json")
-        mlflow.log_dict({"best_params": best["params"], "threshold": threshold_result},
-                        "selection.json")
+        mlflow.log_dict({"best_params": best["params"], "best_cv_average_precision": best["mean"],
+                         "threshold": threshold_result, "test_default": default_metrics,
+                         "test_tuned": tuned_metrics}, "selection.json")
 
     return {
         "model": selected, "best_params": best["params"],
