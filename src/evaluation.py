@@ -10,8 +10,8 @@ from sklearn.metrics import (
 )
 
 
-def evaluate_model(model, X_test, y_test):
-    y_pred = model.predict(X_test)
+def evaluate_model(model, X_test, y_test, threshold=None):
+    y_pred = model.predict(X_test) if threshold is None else None
     if not hasattr(model, "predict_proba"):
         raise TypeError("The model must implement predict_proba for these metrics.")
     y_prob = model.predict_proba(X_test)
@@ -21,6 +21,10 @@ def evaluate_model(model, X_test, y_test):
         raise ValueError(f"Binary classification expected; found classes {classes!r}.")
     positive_class = 1 if 1 in classes else classes[-1]
     y_prob = y_prob[:, classes.index(positive_class)]
+    if threshold is not None:
+        if not 0 <= threshold <= 1:
+            raise ValueError("threshold must be in [0, 1].")
+        y_pred = (y_prob >= threshold).astype(int)
     y_test_binary = (y_test == positive_class).astype(int)
     y_pred_binary = (y_pred == positive_class).astype(int)
 

@@ -5,7 +5,7 @@ import pandas as pd
 from sklearn.compose import ColumnTransformer, make_column_selector
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder, OrdinalEncoder
+from sklearn.preprocessing import OneHotEncoder, OrdinalEncoder, FunctionTransformer
 
 
 def _one_hot_encoder() -> OneHotEncoder:
@@ -51,21 +51,41 @@ def preprocess_framingham(X_train, X_test, one_hot=True):
     return preprocess_data(X_train, X_test, one_hot=one_hot)
 
 
+def clean_telco(frame):
+    """Dataset-specific, row-wise cleanup safe to repeat in each CV fold."""
+    frame = frame.drop(columns=["customerID"], errors="ignore").copy()
+    frame["TotalCharges"] = pd.to_numeric(
+        frame["TotalCharges"].astype(str).str.strip().replace("", float("nan")),
+        errors="raise",
+    )
+    return frame
+
+
 def preprocess_telco(X_train, X_test, one_hot=True):
     """Telco: eliminar identificadores, convertir importes y codificar texto."""
-    def clean(frame):
-        frame = frame.drop(columns=["customerID"], errors="ignore").copy()
-        frame["TotalCharges"] = pd.to_numeric(
-            frame["TotalCharges"].astype(str).str.strip().replace("", float("nan")),
-            errors="raise",
-        )
-        return frame
+    return preprocess_data(clean_telco(X_train), clean_telco(X_test), one_hot=one_hot)
 
-    return preprocess_data(clean(X_train), clean(X_test), one_hot=one_hot)
+
+def clean_credit(frame):
+    return frame.drop(columns=["ID"], errors="ignore")
 
 
 def preprocess_credit(X_train, X_test, one_hot=True):
     """Crédito: eliminar ID e imputar ausentes; conservar códigos numéricos."""
-    X_train = X_train.drop(columns=["ID"], errors="ignore")
-    X_test = X_test.drop(columns=["ID"], errors="ignore")
-    return preprocess_data(X_train, X_test, one_hot=one_hot)
+    return preprocess_data(clean_credit(X_train), clean_credit(X_test), one_hot=one_hot)
+
+
+def build_dataset_pipeline(dataset, model, one_hot=True):
+    """Cloneable pipeline used only by optional cross-validation optimization."""
+    cleaning = {
+        "framingham": None,
+        "telco": clean_telco,
+        "credit": clean_credit,
+    }
+    if dataset not in cleaning:
+        raise ValueError(f"Unknown dataset: {dataset!r}")
+    steps = []
+    if cleaning[dataset] is not None:
+        steps.append(("clean", FunctionTransformer(cleaning[dataset], validate=False)))
+    steps.extend([("preprocessing", build_preprocessor(one_hot=one_hot)), ("model", model)])
+    return Pipeline(steps)
