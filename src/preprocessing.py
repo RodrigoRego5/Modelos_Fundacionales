@@ -1,43 +1,71 @@
 
-from sklearn.compose import ColumnTransformer
+from __future__ import annotations
+
+import pandas as pd
+from sklearn.compose import ColumnTransformer, make_column_selector
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder
+from sklearn.preprocessing import OneHotEncoder, OrdinalEncoder
 
 
-def preprocess_data(X_train, X_test, one_hot=False):
-    numeric_cols = X_train.select_dtypes(
-        include="number"
-    ).columns
+def _one_hot_encoder() -> OneHotEncoder:
+    """Create an encoder compatible with old and new scikit-learn versions."""
+    try:
+        return OneHotEncoder(handle_unknown="ignore", sparse_output=False)
+    except TypeError:  # scikit-learn < 1.2
+        return OneHotEncoder(handle_unknown="ignore", sparse=False)
 
-    categorical_cols = X_train.select_dtypes(
-        exclude="number"
-    ).columns
 
+def build_preprocessor(one_hot: bool = True) -> ColumnTransformer:
+    """Build a leakage-free transformer for mixed tabular datasets."""
     numeric_pipeline = Pipeline([
-        ("imputer", SimpleImputer(strategy="median"))
+        ("imputer", SimpleImputer(strategy="median", keep_empty_features=True)),
     ])
 
     categorical_steps = [
-        ("imputer", SimpleImputer(strategy="most_frequent"))
+        ("imputer", SimpleImputer(strategy="most_frequent", keep_empty_features=True)),
     ]
-
     if one_hot:
-        categorical_steps.append(
-            ("encoder", OneHotEncoder(
-                handle_unknown="ignore",
-                sparse_output=False
-            ))
-        )
+        categorical_steps.append(("encoder", _one_hot_encoder()))
+    else:
+        categorical_steps.append(("encoder", OrdinalEncoder(handle_unknown="use_encoded_value", unknown_value=-1)))
 
     categorical_pipeline = Pipeline(categorical_steps)
-
-    preprocessor = ColumnTransformer([
-        ("numeric", numeric_pipeline, numeric_cols),
-        ("categorical", categorical_pipeline, categorical_cols)
+    return ColumnTransformer([
+        ("numeric", numeric_pipeline, make_column_selector(dtype_include="number")),
+        ("categorical", categorical_pipeline, make_column_selector(dtype_exclude="number")),
     ])
+
+
+def preprocess_data(X_train, X_test, one_hot=True):
+    preprocessor = build_preprocessor(one_hot=one_hot)
 
     X_train = preprocessor.fit_transform(X_train)
     X_test = preprocessor.transform(X_test)
 
     return X_train, X_test, preprocessor
+
+
+def preprocess_framingham(X_train, X_test, one_hot=True):
+    """Framingham: imputar ausentes; sin escalado ni ingeniería de variables."""
+    return preprocess_data(X_train, X_test, one_hot=one_hot)
+
+
+def preprocess_telco(X_train, X_test, one_hot=True):
+    """Telco: eliminar identificadores, convertir importes y codificar texto."""
+    def clean(frame):
+        frame = frame.drop(columns=["customerID"], errors="ignore").copy()
+        frame["TotalCharges"] = pd.to_numeric(
+            frame["TotalCharges"].astype(str).str.strip().replace("", float("nan")),
+            errors="raise",
+        )
+        return frame
+
+    return preprocess_data(clean(X_train), clean(X_test), one_hot=one_hot)
+
+
+def preprocess_credit(X_train, X_test, one_hot=True):
+    """Crédito: eliminar ID e imputar ausentes; conservar códigos numéricos."""
+    X_train = X_train.drop(columns=["ID"], errors="ignore")
+    X_test = X_test.drop(columns=["ID"], errors="ignore")
+    return preprocess_data(X_train, X_test, one_hot=one_hot)
