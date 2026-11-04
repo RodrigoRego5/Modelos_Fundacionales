@@ -1,4 +1,4 @@
-
+"""Imputación y codificación ajustadas exclusivamente con entrenamiento."""
 from __future__ import annotations
 
 import pandas as pd
@@ -9,21 +9,17 @@ from sklearn.preprocessing import OneHotEncoder, OrdinalEncoder, FunctionTransfo
 
 
 def _one_hot_encoder() -> OneHotEncoder:
-    """Create an encoder compatible with old and new scikit-learn versions."""
-    try:
-        return OneHotEncoder(handle_unknown="ignore", sparse_output=False)
-    except TypeError:  # scikit-learn < 1.2
-        return OneHotEncoder(handle_unknown="ignore", sparse=False)
+    return OneHotEncoder(handle_unknown="ignore", sparse_output=False)
 
 
-def build_preprocessor(one_hot: bool = True) -> ColumnTransformer:
+def build_preprocessor(one_hot: bool = True, *, numerical_missing="median", categorical_missing="most_frequent") -> ColumnTransformer:
     """Build a leakage-free transformer for mixed tabular datasets."""
     numeric_pipeline = Pipeline([
-        ("imputer", SimpleImputer(strategy="median", keep_empty_features=True)),
+        ("imputer", SimpleImputer(strategy=numerical_missing, keep_empty_features=True)),
     ])
 
     categorical_steps = [
-        ("imputer", SimpleImputer(strategy="most_frequent", keep_empty_features=True)),
+        ("imputer", SimpleImputer(strategy=categorical_missing, keep_empty_features=True)),
     ]
     if one_hot:
         categorical_steps.append(("encoder", _one_hot_encoder()))
@@ -89,3 +85,12 @@ def build_dataset_pipeline(dataset, model, one_hot=True):
         steps.append(("clean", FunctionTransformer(cleaning[dataset], validate=False)))
     steps.extend([("preprocessing", build_preprocessor(one_hot=one_hot)), ("model", model)])
     return Pipeline(steps)
+
+
+def build_preprocessing(config):
+    settings = config["preprocessing"]
+    return build_preprocessor(
+        one_hot=settings["categorical_encoding"] == "one_hot",
+        numerical_missing=settings["numerical_missing"],
+        categorical_missing=settings.get("categorical_missing", "most_frequent"),
+    )

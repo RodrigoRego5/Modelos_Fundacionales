@@ -1,4 +1,4 @@
-
+"""Lectura, preparación y partición de datasets de clasificación binaria."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -6,10 +6,7 @@ from pathlib import Path
 import pandas as pd
 
 from sklearn.model_selection import train_test_split
-try:
-    from .preprocessing import preprocess_data, preprocess_framingham, preprocess_telco, preprocess_credit
-except ImportError:  # imports used by notebooks after appending src/
-    from preprocessing import preprocess_data, preprocess_framingham, preprocess_telco, preprocess_credit
+from .preprocessing import preprocess_data, preprocess_framingham, preprocess_telco, preprocess_credit
 
 
 def _read_table(path: str | Path) -> pd.DataFrame:
@@ -22,7 +19,7 @@ def _read_table(path: str | Path) -> pd.DataFrame:
     if path.suffix.lower() in {".xls", ".xlsx"}:
         df = pd.read_excel(path)
         # UCI credit workbook has technical names in row 0 and real names in row 1.
-        if "Y" in df.columns and str(df.iloc[0]["Y"]).strip() == "default payment next month":
+        if not df.empty and "Y" in df.columns and str(df.iloc[0]["Y"]).strip() == "default payment next month":
             df = pd.read_excel(path, header=1)
         return df
     return pd.read_csv(path)
@@ -90,3 +87,48 @@ def load_dataset(path=None, target=None, preprocess=True, one_hot=True, test_siz
 
     result = (X_train, X_test, y_train, y_test)
     return (*result, transformer) if return_preprocessor else result
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+def resolve_data_path(config):
+    path = Path(config["dataset"]["path"]).expanduser()
+    return path.resolve() if path.is_absolute() else (PROJECT_ROOT / path).resolve()
+
+
+def load_data(config):
+    frame = _read_table(resolve_data_path(config))
+    frame.columns = frame.columns.astype(str).str.strip()
+    if not frame.columns.is_unique:
+        raise ValueError("El dataset contiene nombres de columnas duplicados.")
+    return frame
+
+
+def prepare_data(frame, config):
+    rules = config["dataset"]
+    target = rules["target"]
+    required = {target, *rules.get("drop_columns", []), *rules.get("numeric_columns", [])}
+    missing = required.difference(frame.columns)
+    if missing:
+        raise ValueError(f"Faltan columnas declaradas: {sorted(missing)}")
+    frame = frame.dropna(subset=[target]).copy()
+    y = _normalise_target(frame[target])
+    if set(y.unique()) != {0, 1}:
+        raise ValueError("El objetivo debe contener las dos clases 0/1 o Yes/No.")
+    X = frame.drop(columns=[target, *rules.get("drop_columns", [])])
+    for column in rules.get("numeric_columns", []):
+        # Telco representa algunos importes ausentes mediante espacios.
+        X[column] = pd.to_numeric(X[column].replace(r"^\s*$", float("nan"), regex=True), errors="raise")
+    if X.empty:
+        raise ValueError("El dataset no contiene predictores o filas utilizables.")
+    return X, y.astype(int)
+
+
+def split_data(X, y, config):
+    split = config["split"]
+    parts = train_test_split(X, y, test_size=split["test_size"],
+                             random_state=split["random_state"], stratify=y)
+    if any(set(labels.unique()) != {0, 1} for labels in (parts[2], parts[3])):
+        raise ValueError("Entrenamiento y test necesitan ejemplos de ambas clases.")
+    return parts

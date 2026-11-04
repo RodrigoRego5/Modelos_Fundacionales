@@ -1,160 +1,114 @@
-## Descripción del proyecto
+﻿# Comparación de modelos tabulares
 
-Comparación de LightGBM y TabPFN en tres datasets de clasificación binaria mediante MLflow. Cada integrante crea su notebook en su rama y utiliza los módulos comunes para ejecutar y comparar experimentos.
+## Introducción
+
+Pipeline de clasificación binaria para comparar **LightGBM** y **TabPFN** sobre
+Framingham, Telco Customer Churn y Default of Credit Card Clients. Los datasets
+se configuran mediante YAML y las ejecuciones se registran en MLflow local.
 
 ## Estructura del proyecto
 
 ```text
-proyecto/
-├── data/                 # Datasets originales
-├── src/
-│   ├── data.py           # Carga, limpieza y división de datos
-│   ├── preprocessing.py  # Imputación y codificación
-│   ├── models.py         # Construcción de modelos
-│   ├── evaluation.py     # Cálculo de métricas
-│   ├── optimization.py   # Búsqueda y ajuste opcionales del umbral
-│   └── experiments.py    # Entrenamiento y registro en MLflow
-├── tests/                # Pruebas del flujo completo
-├── framhingam.ipynb       # Ejemplo de ejecución
-├── requirements.txt
-└── README.md
+app/
+  pipeline.py        # Flujo común y punto de entrada
+  config.py          # Lectura de configuraciones
+  datasets.py        # Carga, limpieza y partición
+  preprocessing.py   # Imputación y codificación
+  models.py          # LightGBM y TabPFN
+  evaluation.py      # Métricas de clasificación
+  tracking.py        # Registro en MLflow
+  experiments.py     # Entrenamiento desde matrices
+  optimization.py    # Optimización de hiperparámetros y umbral
+configs/             # Configuraciones de datasets
+data/                # Datasets originales
+docs/                # Especificación del pipeline
+framhingam.ipynb      # Ejemplos interactivos
+requirements.txt     # Dependencias
 ```
 
 ## Guía de ejecución
 
-Instalar las dependencias y ejecutar el notebook desde la raíz del proyecto:
+Ejecutar desde la raíz del proyecto, con el entorno de Python activado.
+
+### Terminal
 
 ```bash
 python -m pip install -r requirements.txt
+python -m app.pipeline --config configs/telco.yaml --model lightgbm
 ```
 
-### 1. Importar módulos y configurar MLflow
+Para cambiar de dataset, seleccionar otro YAML de [configs/](./configs/).
+TabPFN requiere conexión y una clave en `TABPFN_API_KEY`. En PowerShell:
 
-```python
-import mlflow
-
-from src.data import load_dataset
-from src.models import build_lightgbm, build_tabpfn
-from src.experiments import run_experiment
-
-participant = "TU_NOMBRE"
-apikey = "TU_API_KEY"
-mlflow.set_experiment("comparacion_modelos")
+```powershell
+$env:TABPFN_API_KEY = "TU_API_KEY"
+python -m app.pipeline --config configs/framingham.yaml --model tabpfn
 ```
 
-### 2. Cargar el dataset
+La consola muestra métricas y duración. Para exportar además el resultado a un
+archivo, añadir `--output results/resumen.json`.
 
-```python
-dataset = "framingham"  # framingham, telco o credit
-
-X_train, X_test, y_train, y_test = load_dataset(
-    dataset=dataset,
-    random_state=42,
-    test_size=0.2,
-    one_hot=True,
-)
-```
-
-| Dataset | Variable objetivo | Limpieza específica |
-| --- | --- | --- |
-| `framingham` | `TenYearCHD` | Imputación de valores ausentes |
-| `telco` | `Churn` | Eliminación de customerID, conversión de TotalCharges y objetivo Yes/No |
-| `credit` | `default payment next month` | Lectura de la cabecera del Excel y eliminación de ID |
-
-El preprocesamiento se ajusta solo con entrenamiento. Por defecto, imputa valores ausentes y aplica one-hot encoding; con `one_hot=False` utiliza codificación ordinal. El objetivo positivo es siempre `1`.
-
-Cada dataset tiene su función en [src/preprocessing.py](src/preprocessing.py):
-`preprocess_framingham`, `preprocess_telco` y `preprocess_credit`. Cada integrante
-puede modificar su función sin alterar las otras; `load_dataset` la selecciona
-automáticamente. Solo se realiza limpieza básica, imputación y codificación, sin
-escalado, balanceo ni selección de variables. Con `preprocess=False` se omiten
-estas funciones y se devuelven los predictores originales.
-
-### 3. Ejecutar un experimento
-
-```python
-params_lgbm = {
-    "n_estimators": 200,
-    "learning_rate": 0.05,
-    "random_state": 42,
-    "verbosity": -1,
-}
-
-model_lgbm, metrics_lgbm = run_experiment(
-    model=build_lightgbm(params_lgbm),
-    model_name="LightGBM",
-    dataset=dataset,
-    X_train=X_train,
-    X_test=X_test,
-    y_train=y_train,
-    y_test=y_test,
-    params=params_lgbm,
-    participant=participant,
-)
-
-print(metrics_lgbm)
-```
-
-Cada integrante introduce su clave en `apikey` en la primera celda. Para TabPFN, utilizar `build_tabpfn(params={}, apikey=apikey)`, `model_name="TabPFN"` y `params={}`. Requiere conexión al servicio remoto.
-
-### Optimización opcional
-
-Carga el dataset con `preprocess=False` y llama a `optimize_experiment`. 
-La búsqueda aleatoria valida los candidatos con
-CV estratificada; la limpieza e imputación se ajustan dentro de cada fold.
-MLflow registra un run principal y un run hijo por candidato. El mejor modelo se
-reentrena con todo el entrenamiento y solo entonces se evalúa en test.
-Ambos tipos de run muestran `recall`, `f1`, `roc_auc`, `pr_auc`,
-`balanced_accuracy` y `precision`, igual que una ejecución normal. En los hijos
-son medias de validación cruzada; en el principal son las únicas métricas
-mostradas y corresponden al test final. El umbral elegido se registra como parámetro.
-
-```python
-from src.optimization import optimize_experiment
-
-# Recargar sin preprocesar: la pipeline se ajusta en cada fold de validación.
-X_train_raw, X_test_raw, y_train_opt, y_test_opt = load_dataset(
-    dataset=dataset, preprocess=False, random_state=42, test_size=0.2
-)
-
-resultado = optimize_experiment(
-    dataset=dataset,
-    model=build_lightgbm({"random_state": 42, "verbosity": -1}),
-    model_name="LightGBM",
-    X_train=X_train_raw, X_test=X_test_raw,
-    y_train=y_train_opt, y_test=y_test_opt,
-    param_distributions={
-        "n_estimators": [100, 200, 300],
-        "learning_rate": [0.01, 0.05, 0.1],
-        "num_leaves": [15, 31],
-    },
-    n_iter=5,
-    cv_folds=3,
-    min_precision=0.30,  # None para no ajustar el umbral
-    participant=participant,
-)
-
-print(resultado["best_params"])
-print(resultado["threshold"])
-print(resultado["test_default"])
-print(resultado["test_tuned"])
-```
-
-`min_precision=None` omite el ajuste del umbral. Con un valor entre 0 y 1, el
-umbral se selecciona usando probabilidades out-of-fold para maximizar recall
-sujeto a esa precisión mínima. El test nunca decide parámetros ni umbral.
-Si se ajusta el umbral, las métricas sin prefijo del run principal corresponden
-al umbral ajustado; la comparación sin ajuste queda en `selection.json`.
-Para TabPFN, usar pocos candidatos/folds por sus llamadas remotas.
-
-### 4. Consultar resultados
-
-Desde la raíz del proyecto:
+Consultar los experimentos locales en http://localhost:5000:
 
 ```bash
-mlflow ui
+mlflow ui --backend-store-uri sqlite:///mlflow.db
 ```
 
-Abrir http://localhost:5000 para consultar parámetros, métricas y etiquetas. Para comparar resultados, mantener el mismo dataset, semilla, split y codificación. Los registros locales no se comparten automáticamente entre equipos.
+### Python
 
+```python
+from app.pipeline import run_pipeline
 
+resultado = run_pipeline("configs/telco.yaml", "lightgbm")
+metricas = resultado["metrics"]
+modelo = resultado["model"]
+preprocesador = resultado["preprocessor"]
+```
+
+La función acepta una ruta YAML o un diccionario y devuelve los objetos ajustados,
+las métricas, los tiempos y los identificadores de MLflow.
+
+## Configuración de datasets
+
+| Configuración | Objetivo | Preparación específica |
+| --- | --- | --- |
+| [framingham.yaml](./configs/framingham.yaml) | `TenYearCHD` | Imputación de ausentes |
+| [telco.yaml](./configs/telco.yaml) | `Churn` | Eliminar `customerID` y convertir `TotalCharges` a número |
+| [credit.yaml](./configs/credit.yaml) | `default payment next month` | Leer la cabecera del Excel UCI y eliminar `ID` |
+
+Cada YAML define datos, preprocesamiento, partición, métricas y parámetros de
+los modelos. Ejemplo:
+
+```yaml
+name: telco_churn
+dataset:
+  path: data/Telco-Customer-Churn.csv
+  target: Churn
+  drop_columns: [customerID]
+  numeric_columns: [TotalCharges]
+preprocessing:
+  numerical_missing: median
+  categorical_encoding: one_hot
+split: {test_size: 0.2, random_state: 42}
+evaluation:
+  metrics: [roc_auc, f1, accuracy, recall, pr_auc, balanced_accuracy, precision]
+models:
+  lightgbm: {n_estimators: 200, learning_rate: 0.05, verbosity: -1}
+  tabpfn: {}
+tracking:
+  experiment_name: comparacion_modelos  # Grupo de experimentos en MLflow
+  run_name: telco_baseline              # Nombre de la ejecución
+```
+
+Las rutas relativas de datos parten de la raíz del proyecto. La imputación y
+codificación se ajustan solo con entrenamiento. Para comparar modelos, mantener
+los mismos datos, preprocesamiento, semilla y partición.
+
+`numerical_missing` admite `median`, `mean` o `most_frequent`;
+`categorical_encoding` admite `one_hot` u `ordinal`. LightGBM usa `n_jobs: -1`
+por defecto; se puede limitar el número de hilos en `models.lightgbm`.
+
+`tracking.experiment_name` y `tracking.run_name` son obligatorios y se toman
+exclusivamente del YAML. Cada ejecución recibe un identificador único, aunque
+se repita el nombre. MLflow guarda parámetros, métricas y artefactos en la
+base local `mlflow.db` y en `mlruns/`.

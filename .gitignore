@@ -6,3 +6,6 @@ mlruns/
 mlartifacts/
 mlflow.db*
 .ipynb_checkpoints/
+results/
+.ruff_cache/
+docs/

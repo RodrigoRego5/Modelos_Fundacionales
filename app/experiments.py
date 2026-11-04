@@ -1,9 +1,6 @@
 import mlflow
 
-try:
-    from .evaluation import evaluate_model
-except ImportError:
-    from evaluation import evaluate_model
+from .evaluation import evaluate_model
 
 
 def run_experiment(

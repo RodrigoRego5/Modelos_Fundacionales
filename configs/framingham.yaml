@@ -1,0 +1,18 @@
+name: framingham
+dataset:
+  path: data/framingham.csv
+  target: TenYearCHD
+  drop_columns: []
+preprocessing:
+  numerical_missing: median
+  categorical_missing: most_frequent
+  categorical_encoding: one_hot
+split: {test_size: 0.2, random_state: 42}
+evaluation:
+  metrics: [roc_auc, f1, accuracy, recall, pr_auc, balanced_accuracy, precision]
+models:
+  lightgbm: {n_estimators: 200, learning_rate: 0.05, verbosity: -1}
+  tabpfn: {}
+tracking:
+  experiment_name: prueba4
+  run_name: framingham_baseline1

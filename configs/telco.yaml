@@ -1,0 +1,19 @@
+name: telco_churn
+dataset:
+  path: data/Telco-Customer-Churn.csv
+  target: Churn
+  drop_columns: [customerID]
+  numeric_columns: [TotalCharges]
+preprocessing:
+  numerical_missing: median
+  categorical_missing: most_frequent
+  categorical_encoding: one_hot
+split: {test_size: 0.2, random_state: 42}
+evaluation:
+  metrics: [roc_auc, f1, accuracy, recall, pr_auc, balanced_accuracy, precision]
+models:
+  lightgbm: {n_estimators: 200, learning_rate: 0.05, verbosity: -1}
+  tabpfn: {}
+tracking:
+  experiment_name: comparacion_modelos
+  run_name: telco_baseline

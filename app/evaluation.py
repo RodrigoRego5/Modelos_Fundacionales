@@ -1,5 +1,8 @@
-import mlflow
+"""Evaluación binaria común para experimentos y validación cruzada."""
+
+import numpy as np
 from sklearn.metrics import (
+    accuracy_score,
     recall_score,
     f1_score,
     roc_auc_score,
@@ -46,13 +49,13 @@ def binary_metrics(y_test_binary, y_pred_binary, y_prob):
         "precision": precision_score(y_test_binary, y_pred_binary, zero_division=0)
     }
 
+METRIC_NAMES = ("roc_auc", "f1", "accuracy", "recall", "pr_auc",
+                "balanced_accuracy", "precision")
 
 
-def log_results(model_name, dataset, params, metrics):
-    with mlflow.start_run(run_name=model_name):
-        mlflow.log_params(params or {})
-        mlflow.set_tags({
-            "model": model_name,
-            "dataset": dataset
-        })
-        mlflow.log_metrics(metrics)
+def evaluate(model, X_test, y_test, metrics):
+    predictions = np.asarray(model.predict(X_test)).reshape(-1)
+    probabilities = model.predict_proba(X_test)[:, list(model.classes_).index(1)]
+    scores = binary_metrics(y_test, predictions, probabilities)
+    scores["accuracy"] = accuracy_score(y_test, predictions)
+    return {name: float(scores[name]) for name in metrics}
