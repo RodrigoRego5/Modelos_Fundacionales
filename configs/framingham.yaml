@@ -15,4 +15,4 @@ models:
   tabpfn: {}
 tracking:
   experiment_name: prueba4
-  run_name: framingham_baseline1
+  run_name: tabpfn_mm

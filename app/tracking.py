@@ -31,7 +31,6 @@ def start_run(config, model_name):
             "pipeline": "common", "metrics_source": "test_default"}
     return mlflow.start_run(run_name=tracking["run_name"], tags=tags)
 
-
 def log_run(config, result, estimator):
     mlflow.log_params({
         "dataset_path": result["context"]["dataset_path"],

@@ -11,9 +11,9 @@ def build_lightgbm(params=None):
 def build_tabpfn(params=None, apikey=None):
     import tabpfn_client
     from tabpfn_client import TabPFNClassifier
-    apikey = apikey or os.getenv("TABPFN_API_KEY")
-    if apikey:
-        tabpfn_client.set_access_token(apikey)
+    access_token = apikey or os.getenv("TABPFN_TOKEN") or os.getenv("TABPFN_API_KEY")
+    if access_token:
+        tabpfn_client.set_access_token(access_token)
     return TabPFNClassifier(**(params or {}))
 
 
@@ -26,5 +26,5 @@ def build_model(name, config):
     params = {"random_state": config["split"]["random_state"],
               **config.get("models", {}).get(name, {})}
     builder = build_lightgbm if name == "lightgbm" else build_tabpfn
-    # La autenticación de TabPFN se obtiene de TABPFN_API_KEY del entorno.
+    # TABPFN_TOKEN es el nombre que espera tabpfn-client; se conserva el alias anterior.
     return builder(params)

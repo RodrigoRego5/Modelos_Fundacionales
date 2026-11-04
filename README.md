@@ -37,10 +37,10 @@ python -m app.pipeline --config configs/telco.yaml --model lightgbm
 ```
 
 Para cambiar de dataset, seleccionar otro YAML de [configs/](./configs/).
-TabPFN requiere conexión y una clave en `TABPFN_API_KEY`. En PowerShell:
+TabPFN requiere conexión y un token en la variable `TABPFN_TOKEN`. En PowerShell:
 
 ```powershell
-$env:TABPFN_API_KEY = "TU_API_KEY"
+$env:TABPFN_TOKEN = "TU_TOKEN"
 python -m app.pipeline --config configs/framingham.yaml --model tabpfn
 ```
 
