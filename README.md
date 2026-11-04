@@ -22,7 +22,6 @@ app/
 configs/             # Configuraciones de datasets
 data/                # Datasets originales
 docs/                # Especificación del pipeline
-framhingam.ipynb      # Ejemplos interactivos
 requirements.txt     # Dependencias
 ```
 
