@@ -38,30 +38,19 @@ def run_pipeline(config, model_name):
     config = load_config(config) if isinstance(config, (str, Path)) else validate_config(config)
     if model_name not in MODEL_NAMES:
         raise ValueError(f"Modelo desconocido: {model_name!r}")
-    timings = {}
-
-    def timed(name, operation):
-        started = perf_counter()
-        value = operation()
-        timings[f"{name}_seconds"] = perf_counter() - started
-        return value
-
     with start_run(config, model_name) as run:
         started = perf_counter()
         # Incluso si el entrenamiento falla queda registrada la configuración.
         mlflow.log_dict(config, "config.json")
-        frame = timed("load", lambda: load_data(config))
-        X, y = timed("prepare", lambda: prepare_data(frame, config))
-        X_train, X_test, y_train, y_test = timed("split", lambda: split_data(X, y, config))
+        frame = load_data(config)
+        X, y = prepare_data(frame, config)
+        X_train, X_test, y_train, y_test = split_data(X, y, config)
         preprocessor = build_preprocessing(config)
-
-        def transform():
-            return preprocessor.fit_transform(X_train), preprocessor.transform(X_test)
-
-        train, test = timed("preprocessing", transform)
-        estimator = timed("model_init", lambda: build_model(model_name, config))
-        timed("fit", lambda: estimator.fit(train, y_train))
-        metrics = timed("evaluation", lambda: evaluate(estimator, test, y_test, config["evaluation"]["metrics"]))
+        train = preprocessor.fit_transform(X_train)
+        test = preprocessor.transform(X_test)
+        estimator = build_model(model_name, config)
+        estimator.fit(train, y_train)
+        metrics = evaluate(estimator, test, y_test, config["evaluation"]["metrics"])
         split_rows = {"train": X_train.index.tolist(), "test": X_test.index.tolist()}
         split_hash = hashlib.sha256(json.dumps(split_rows, sort_keys=True).encode()).hexdigest()
         context = {
@@ -77,7 +66,7 @@ def run_pipeline(config, model_name):
         }
         # Incluye carga, preparación, entrenamiento, evaluación y contexto;
         # excluye el envío de artefactos a MLflow y la escritura de salida CLI.
-        timings["duration_seconds"] = perf_counter() - started
+        timings = {"duration_seconds": perf_counter() - started}
         result = {"dataset": config["name"], "model_name": model_name,
                   "run_id": run.info.run_id,
                   "experiment_id": run.info.experiment_id,
