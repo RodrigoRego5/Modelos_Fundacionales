@@ -6,7 +6,6 @@ dataset:
   numeric_columns: [TotalCharges]
 preprocessing:
   numerical_missing: median
-  categorical_missing: most_frequent
   categorical_encoding: one_hot
 split: {test_size: 0.2, random_state: 42}
 evaluation:

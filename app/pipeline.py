@@ -35,22 +35,28 @@ def run_pipeline(config, model_name):
     El modelo recibe matrices transformadas. El preprocesador recibe predictores
     preparados con las reglas de app.datasets.prepare_data.
     """
+    # VALIDACIÓN DEL YAML
     config = load_config(config) if isinstance(config, (str, Path)) else validate_config(config)
     if model_name not in MODEL_NAMES:
         raise ValueError(f"Modelo desconocido: {model_name!r}")
+    # NUEVA EJECUCIÓN EN MLFLOW
     with start_run(config, model_name) as run:
         started = perf_counter()
         # Incluso si el entrenamiento falla queda registrada la configuración.
         mlflow.log_dict(config, "config.json")
+        # CARGA DE DATOS
         frame = load_data(config)
         X, y = prepare_data(frame, config)
         X_train, X_test, y_train, y_test = split_data(X, y, config)
+        # PREPROCESAMIENTO
         preprocessor = build_preprocessing(config)
         train = preprocessor.fit_transform(X_train)
         test = preprocessor.transform(X_test)
+        # CREACIÓN MODELO, ENTRENAMIENTO Y EVALUACIÓN
         estimator = build_model(model_name, config)
         estimator.fit(train, y_train)
         metrics = evaluate(estimator, test, y_test, config["evaluation"]["metrics"])
+        # CONTEXTO DEL EXPERIMENTO
         split_rows = {"train": X_train.index.tolist(), "test": X_test.index.tolist()}
         split_hash = hashlib.sha256(json.dumps(split_rows, sort_keys=True).encode()).hexdigest()
         context = {
@@ -64,8 +70,7 @@ def run_pipeline(config, model_name):
             "feature_names": preprocessor.get_feature_names_out().tolist(),
             "versions": _versions(),
         }
-        # Incluye carga, preparación, entrenamiento, evaluación y contexto;
-        # excluye el envío de artefactos a MLflow y la escritura de salida CLI.
+        # REGISTRO DEL RESULTADO EN MLFLOW
         timings = {"duration_seconds": perf_counter() - started}
         result = {"dataset": config["name"], "model_name": model_name,
                   "run_id": run.info.run_id,
