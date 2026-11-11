@@ -1,0 +1,6 @@
+## experiments/gonzalolandeira-mlflow
+?? 01_EDA_credit_card_default.ipynb
+?? 03_investigacion_reproducible_gonzalo.ipynb
+?? experimentos_mlflow.ipynb
+?? investigacion_gonzalo/
+e3bdc77b8a1522eb9d8ac9a065568cf9ee9d62d0 solucion problema token tabpfn
