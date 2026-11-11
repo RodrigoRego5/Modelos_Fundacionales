@@ -19,7 +19,7 @@ from .conditions import apply_training_conditions, select_features
 from .datasets import load_data, prepare_data, resolve_data_path, split_data
 from .evaluation import evaluate_predictions
 from .models import MODEL_NAMES, build_model
-from .optimization import search_hyperparameters
+from .optimization import search_hyperparameters, search_decision_threshold
 from .partitions import apply_partition, fingerprint
 from .preprocessing import build_preprocessing
 from .tracking import log_run, start_run
@@ -50,6 +50,8 @@ def run_pipeline(config, model_name, *, partition=None, run_tags=None, tracking_
     with start_run(config, model_name, tags=run_tags, tracking_uri=tracking_uri, nested=nested) as run:
         started = perf_counter()
         timings = {}
+        variant = (run_tags or {}).get("variant", "reference")
+        mlflow.log_param("variant", variant)
         # Incluso si el entrenamiento falla queda registrada la configuración.
         mlflow.log_dict(config, "config.json")
         # CARGA DE DATOS
@@ -90,6 +92,16 @@ def run_pipeline(config, model_name, *, partition=None, run_tags=None, tracking_
             fitted_config.setdefault("models", {}).setdefault(model_name, {}).update(search["best_params"])
             mlflow.log_dict(search, "search_results.json")
             mlflow.log_metric("cv_selection_score", search["best_cv_score"])
+        threshold_search = None
+        timings["threshold_search_seconds"] = 0.0
+        if config.get("threshold_optimization") is not None:
+            stage = perf_counter()
+            threshold_search = search_decision_threshold(X_train, y_train, fitted_config, model_name)
+            timings["threshold_search_seconds"] = perf_counter() - stage
+            mlflow.log_dict(threshold_search, "threshold_search.json")
+            mlflow.log_param("decision_threshold", threshold_search["threshold"])
+            mlflow.log_metric("threshold_oof_score", threshold_search["score_oof"])
+            mlflow.set_tag("metrics_source", "test_tuned_threshold")
         stage = perf_counter()
         X_train, y_train, condition_context = apply_training_conditions(
             X_train, y_train, config.get("perturbation", {})
@@ -127,6 +139,13 @@ def run_pipeline(config, model_name, *, partition=None, run_tags=None, tracking_
         )
         timings["inference_seconds_per_row"] = timings["inference_seconds"] / len(y_test)
         stage = perf_counter()
+        default_threshold_metrics = None
+        default_predictions = predictions.copy()
+        if threshold_search is not None:
+            default_threshold_metrics = evaluate_predictions(
+                y_test, default_predictions, probabilities, config["evaluation"]["metrics"]
+            )
+            predictions = (probabilities >= threshold_search["threshold"]).astype(int)
         metrics = evaluate_predictions(y_test, predictions, probabilities, config["evaluation"]["metrics"])
         timings["evaluation_seconds"] = perf_counter() - stage
         # CONTEXTO DEL EXPERIMENTO
@@ -146,7 +165,7 @@ def run_pipeline(config, model_name, *, partition=None, run_tags=None, tracking_
             "n_train_selected": n_train_selected,
             "n_input_features": X_train.shape[1],
             "training_data_sha256": condition_context["training_data_sha256"],
-            "variant": (run_tags or {}).get("variant", "reference"),
+            "variant": variant,
             "features": config.get("features", {}),
             "perturbation": config.get("perturbation", {}),
             "train_fraction_actual": len(y_train) / n_train_pool,
@@ -171,10 +190,17 @@ def run_pipeline(config, model_name, *, partition=None, run_tags=None, tracking_
         if search is not None:
             result["optimization"] = {key: value for key, value in search.items()
                                       if key not in ("candidates", "cv_splits")}
-        mlflow.log_text(pd.DataFrame({
+        if threshold_search is not None:
+            result["threshold_optimization"] = {key: value for key, value in threshold_search.items()
+                                                if key not in ("curve", "oof_predictions", "cv_splits")}
+            result["default_threshold_metrics"] = default_threshold_metrics
+        prediction_frame = pd.DataFrame({
             "row_index": X_test.index, "y_true": np.asarray(y_test),
             "y_pred": predictions, "probability_positive": probabilities,
-        }).to_csv(index=False, lineterminator="\n"), "predictions.csv")
+        })
+        if threshold_search is not None:
+            prediction_frame["y_pred_default"] = default_predictions
+        mlflow.log_text(prediction_frame.to_csv(index=False, lineterminator="\n"), "predictions.csv")
         log_run(config, result, estimator, model_name)
     return {**result, "model": estimator, "preprocessor": preprocessor}
 

@@ -20,7 +20,8 @@ def _mapping(value, label, allowed, required=()):
 def validate_config(config):
     config = deepcopy(config)
     required = {"name", "dataset", "preprocessing", "split", "evaluation", "tracking"}
-    _mapping(config, "config", required | {"models", "features", "perturbation", "optimization"}, required)
+    _mapping(config, "config", required | {"models", "features", "perturbation", "optimization",
+                                           "threshold_optimization"}, required)
     if not isinstance(config["name"], str) or not config["name"].strip():
         raise ValueError("name debe ser un texto no vacío.")
     dataset = config["dataset"]
@@ -95,6 +96,22 @@ def _validate_conditions(config):
     _columns(perturbation.get("noise_columns", []), "perturbation.noise_columns")
     if perturbation.get("numeric_noise_std", 0) and not perturbation.get("noise_columns"):
         raise ValueError("El ruido requiere noise_columns explícitas (variables continuas pertinentes).")
+    threshold = config.get("threshold_optimization")
+    if threshold is not None:
+        _mapping(threshold, "threshold_optimization",
+                 {"scoring", "cv_folds", "random_state", "min_precision"},
+                 {"scoring", "cv_folds", "random_state"})
+        if threshold["scoring"] not in ("f1", "recall"):
+            raise ValueError("threshold_optimization.scoring debe ser f1 o recall.")
+        if type(threshold["cv_folds"]) is not int or threshold["cv_folds"] < 2:
+            raise ValueError("threshold_optimization.cv_folds debe ser un entero >= 2.")
+        _seed(threshold["random_state"], "threshold_optimization.random_state")
+        minimum = threshold.get("min_precision")
+        if minimum is not None and (type(minimum) not in (int, float)
+                                    or not math.isfinite(minimum) or not 0 < minimum <= 1):
+            raise ValueError("threshold_optimization.min_precision debe estar en (0, 1].")
+        if threshold["scoring"] == "recall" and minimum is None:
+            raise ValueError("Optimizar recall requiere min_precision para evitar predecir todo positivo.")
     optimization = config.get("optimization")
     if optimization is None:
         return

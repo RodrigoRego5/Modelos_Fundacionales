@@ -43,6 +43,8 @@ def log_run(config, result, estimator, model_name):
         **{f"perturbation.{key}": value for key, value in config.get("perturbation", {}).items()},
         **{f"optimization.{key}": value for key, value in (config.get("optimization") or {}).items()
            if key != "param_distributions"},
+        **{f"threshold_optimization.{key}": value
+           for key, value in (config.get("threshold_optimization") or {}).items()},
         **{f"model.{key}": value for key, value in estimator.get_params(deep=False).items()},
         **{key: result["context"][key] for key in ("n_train", "n_train_selected", "n_test", "n_input_features", "n_features",
                                                  "train_positive_rate", "train_size_requested")},
@@ -51,5 +53,8 @@ def log_run(config, result, estimator, model_name):
            ("split_seed", "model_seed", "sampling_seed", "n_train_pool", "train_fraction_actual")},
     })
     mlflow.log_metrics(result["metrics"])
+    if "default_threshold_metrics" in result:
+        mlflow.log_metrics({f"default_threshold_{key}": value
+                            for key, value in result["default_threshold_metrics"].items()})
     mlflow.log_metrics(result["timings"])
     mlflow.log_dict(result, "result.json")

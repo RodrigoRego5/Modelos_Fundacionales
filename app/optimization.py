@@ -81,6 +81,65 @@ def search_hyperparameters(X, y, config, model_name, *, on_candidate=None):
                           for train, valid in folds]}
 
 
+def threshold_folds(X, y, config):
+    """Particiones internas del train para elegir umbral; nunca recibe test."""
+    settings = config["threshold_optimization"]
+    if y.value_counts().min() < settings["cv_folds"]:
+        raise ValueError("Cada clase necesita al menos cv_folds ejemplos para ajustar el umbral.")
+    cv = StratifiedKFold(n_splits=settings["cv_folds"], shuffle=True,
+                        random_state=settings["random_state"])
+    return list(cv.split(X, y))
+
+
+def search_decision_threshold(X, y, config, model_name):
+    """Elige umbral con probabilidades out-of-fold y los hiperparámetros fijados.
+
+    Reajusta preprocesamiento y condiciones dentro de cada fold. Las puntuaciones
+    OOF se usan para seleccionar, no son una estimación independiente del rendimiento
+    si los hiperparámetros se han seleccionado usando este mismo entrenamiento.
+    """
+    settings = config["threshold_optimization"]
+    folds = threshold_folds(X, y, config)
+    probabilities = np.empty(len(y), dtype=float)
+    for train_indices, validation_indices in folds:
+        fold_X, fold_y, _ = apply_training_conditions(
+            X.iloc[train_indices], y.iloc[train_indices], config.get("perturbation", {})
+        )
+        transformer = build_preprocessing(config)
+        train = transformer.fit_transform(fold_X)
+        validation = transformer.transform(X.iloc[validation_indices])
+        estimator = build_model(model_name, config)
+        estimator.fit(train, fold_y)
+        probabilities[validation_indices] = estimator.predict_proba(validation)[
+            :, list(estimator.classes_).index(1)
+        ]
+    precision, recall, thresholds = precision_recall_curve(y, probabilities)
+    precision, recall = precision[:-1], recall[:-1]
+    f1 = np.divide(2 * precision * recall, precision + recall,
+                   out=np.zeros_like(precision), where=(precision + recall) > 0)
+    scores = f1 if settings["scoring"] == "f1" else recall
+    minimum = settings.get("min_precision")
+    eligible = np.arange(len(thresholds)) if minimum is None else np.flatnonzero(precision >= minimum)
+    if not len(eligible):
+        raise ValueError("Ningún umbral OOF alcanza min_precision; no se ha consultado el test.")
+    # Empates: mayor precisión y, finalmente, mayor umbral.
+    best = max(eligible, key=lambda i: (scores[i], precision[i], thresholds[i]))
+    return {
+        "threshold": float(thresholds[best]), "scoring": settings["scoring"],
+        "score_oof": float(scores[best]), "f1_oof": float(f1[best]),
+        "precision_oof": float(precision[best]), "recall_oof": float(recall[best]),
+        "cv_folds": len(folds), "random_state": settings["random_state"],
+        "min_precision": minimum,
+        "model_params": estimator.get_params(deep=False),
+        "curve": {"thresholds": thresholds.tolist(), "precision": precision.tolist(),
+                  "recall": recall.tolist(), "f1": f1.tolist()},
+        "oof_predictions": {"row_index": X.index.tolist(), "y_true": y.tolist(),
+                            "probability_positive": probabilities.tolist()},
+        "cv_splits": [{"train": X.index[train].tolist(), "validation": X.index[valid].tolist()}
+                      for train, valid in folds],
+    }
+
+
 def optimize_threshold(y_true, probabilities, min_precision=0.30):
     """Maximize validation recall subject to a minimum validation precision."""
     if not 0 < min_precision <= 1:

@@ -16,7 +16,7 @@ from .config import _mapping, load_config, validate_config
 from .conditions import apply_training_conditions, select_features
 from .datasets import PROJECT_ROOT, load_data, prepare_data, resolve_data_path
 from .models import MODEL_NAMES
-from .optimization import search_folds
+from .optimization import search_folds, threshold_folds
 from .partitions import fingerprint, make_partitions, validate_train_size
 from .pipeline import _versions, run_pipeline
 from .tracking import start_run
@@ -69,7 +69,8 @@ def load_battery_config(path):
         raise ValueError("variants debe ser una lista no vacía.")
     names = set()
     for variant in variants:
-        _mapping(variant, "variant", {"name", "preprocessing", "features", "perturbation", "optimization"}, {"name"})
+        _mapping(variant, "variant", {"name", "preprocessing", "features", "perturbation", "optimization",
+                                        "threshold_optimization"}, {"name"})
         name = variant["name"]
         if not isinstance(name, str) or not name.strip() or name in names:
             raise ValueError("Cada variante necesita un nombre no vacío y único.")
@@ -114,8 +115,9 @@ def build_plan(config_path):
                         for key in ("preprocessing", "features", "perturbation"):
                             if key in variant:
                                 run_config.setdefault(key, {}).update(variant[key])
-                        if "optimization" in variant:
-                            run_config["optimization"] = deepcopy(variant["optimization"])
+                        for key in ("optimization", "threshold_optimization"):
+                            if key in variant:
+                                run_config[key] = deepcopy(variant[key])
                         params = run_config.setdefault("models", {}).setdefault(model_name, {})
                         params.update(battery["model_params"].get(model_name, {}))
                         params["random_state"] = battery["model_seed"]
@@ -130,6 +132,8 @@ def build_plan(config_path):
                         apply_training_conditions(selected, labels, run_config.get("perturbation", {}))
                         if run_config.get("optimization") is not None:
                             search_folds(selected, labels, run_config, model_name)
+                        if run_config.get("threshold_optimization") is not None:
+                            threshold_folds(selected, labels, run_config)
                         job = {"config": run_config, "model_name": model_name,
                                "variant": variant["name"], "partition_id": partition_id}
                         job["job_id"] = fingerprint(job)
@@ -168,6 +172,11 @@ def _log_results(plan, records, run):
             if "optimization" in result:
                 row["best_cv_score"] = result["optimization"]["best_cv_score"]
                 row["best_params"] = json.dumps(result["optimization"]["best_params"], sort_keys=True)
+            if "threshold_optimization" in result:
+                row["decision_threshold"] = result["threshold_optimization"]["threshold"]
+                row["threshold_oof_score"] = result["threshold_optimization"]["score_oof"]
+                row.update({f"default_threshold.{key}": value
+                            for key, value in result["default_threshold_metrics"].items()})
         elif record["status"] == "failed":
             row["error"] = record["error"]
         rows.append(row)

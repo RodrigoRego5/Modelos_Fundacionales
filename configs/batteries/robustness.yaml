@@ -6,8 +6,8 @@ train_sizes: [1.0]
 sampling_seed: 123
 model_seed: 42
 model_params:
-  lightgbm: {n_estimators: 400, learning_rate: 0.05, n_jobs: 4}
-  tabpfn: {n_estimators: 4}
+  lightgbm: {n_estimators: 400, learning_rate: 0.05, scale_pos_weight: 85 / 15, n_jobs: 4}
+  tabpfn: {n_estimators: 8, balance_probabilities}
 # Todas las perturbaciones se aplican a train; el test conserva sus datos originales.
 variants:
   - name: referencia

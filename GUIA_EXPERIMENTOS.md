@@ -147,12 +147,12 @@ python -m app.batteries --config configs/batteries/tuning.yaml
 
 En `practica_05_ajuste` se usa el 30 % del entrenamiento, tres semillas, ambos modelos y dos variantes: `referencia` y `ajustado`. Son 12 ejecuciones finales.
 
-El ajuste evalúa cuatro candidatos por modelo mediante validación cruzada estratificada de tres folds dentro del entrenamiento, eligiendo por average precision:
+El ajuste evalúa 36 candidatos por modelo mediante validación cruzada estratificada de tres folds dentro del entrenamiento, eligiendo por average precision:
 
-- LightGBM: las cuatro combinaciones de `num_leaves: [15, 31]` y `min_child_samples: [10, 30]`.
-- TabPFN: `n_estimators: [2, 4, 8, 16]`.
+- LightGBM: 36 combinaciones aleatorias reproducibles de número de árboles, learning rate, hojas, profundidad, mínimos por hoja, ganancia mínima de división, regularización L1/L2, muestreo de filas y columnas y peso de la clase positiva. Se priorizan árboles contenidos para el tamaño de entrenamiento utilizado. El muestreo de filas se activa con `subsample_freq: 1`.
+- TabPFN: las 36 combinaciones de `n_estimators: [2, 4, 8]`, `softmax_temperature: [0.7, 0.9, 1.0]`, `balance_probabilities: [false, true]` y `average_before_softmax: [false, true]`. El cliente instalado documenta un máximo de 8 estimadores. Son ajustes de inferencia; no se reentrenan los pesos del modelo fundacional. El balanceo y la temperatura pueden cambiar las probabilidades sin mejorar su orden y, por tanto, sin mejorar average precision.
 
-Son 12 ajustes internos por ejecución ajustada, **72 ajustes internos en total**, además de los 12 entrenamientos finales. Igual número de candidatos y folds no implica igual tiempo ni coste del servicio remoto.
+Son 108 ajustes internos por ejecución ajustada, **648 ajustes internos en total**, además de los 12 entrenamientos finales. Igual número de candidatos y folds no implica igual tiempo ni coste del servicio remoto. Para una primera exploración se puede bajar `n_iter` a 12: se muestrearán 12 candidatos por modelo y habrá 216 ajustes internos en total. El presupuesto debe fijarse antes de consultar el test; la búsqueda no garantiza superar la referencia.
 
 Compara `ajustado − referencia` para el mismo modelo y partición. Anota la mejora en average precision de test, su estabilidad y el incremento de `search_seconds`. Consulta `search_results.json` para los mejores parámetros. `cv_selection_score` es la puntuación interna de selección; no la mezcles con el resultado de test.
 
