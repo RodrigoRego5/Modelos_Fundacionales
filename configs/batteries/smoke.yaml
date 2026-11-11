@@ -1,0 +1,12 @@
+name: comprobacion_lightgbm
+datasets: [configs/framingham.yaml]
+models: [lightgbm]
+split_seeds: [42]
+# Los enteros son filas; los floats son fracciones del entrenamiento disponible.
+train_sizes: [200, 1.0]
+sampling_seed: 123
+model_seed: 42
+model_params:
+  lightgbm: {n_estimators: 20, n_jobs: 2}
+tracking:
+  experiment_name: practica_00_comprobacion

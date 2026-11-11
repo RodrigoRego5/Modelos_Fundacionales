@@ -1,6 +1,7 @@
 """Carga segura de YAML y validación previa a datos, modelos o tracking."""
 
 from copy import deepcopy
+import math
 from pathlib import Path
 
 import yaml
@@ -19,7 +20,7 @@ def _mapping(value, label, allowed, required=()):
 def validate_config(config):
     config = deepcopy(config)
     required = {"name", "dataset", "preprocessing", "split", "evaluation", "tracking"}
-    _mapping(config, "config", required | {"models", "tracking"}, required)
+    _mapping(config, "config", required | {"models", "features", "perturbation", "optimization"}, required)
     if not isinstance(config["name"], str) or not config["name"].strip():
         raise ValueError("name debe ser un texto no vacío.")
     dataset = config["dataset"]
@@ -68,7 +69,70 @@ def validate_config(config):
     _mapping(tracking, "tracking", {"experiment_name", "run_name"}, {"experiment_name", "run_name"})
     if any(not isinstance(v, str) or not v.strip() for v in tracking.values()):
         raise ValueError("Los valores de tracking deben ser textos no vacíos.")
+    _validate_conditions(config)
     return config
+
+
+def _validate_conditions(config):
+    features = config.get("features", {})
+    _mapping(features, "features", {"mode", "categorical_columns"})
+    if features.get("mode", "all") not in ("all", "numeric", "categorical"):
+        raise ValueError("features.mode debe ser all, numeric o categorical.")
+    _columns(features.get("categorical_columns", []), "features.categorical_columns")
+    perturbation = config.get("perturbation", {})
+    _mapping(perturbation, "perturbation", {"seed", "missing_fraction", "numeric_noise_std",
+                                           "noise_columns", "positive_keep_fraction"})
+    _seed(perturbation.get("seed", 42), "perturbation.seed")
+    for key, default in (("missing_fraction", 0.0), ("numeric_noise_std", 0.0),
+                         ("positive_keep_fraction", 1.0)):
+        value = perturbation.get(key, default)
+        if type(value) not in (int, float) or not math.isfinite(value) or value < 0:
+            raise ValueError(f"perturbation.{key} debe ser un número finito no negativo.")
+    if not 0 <= perturbation.get("missing_fraction", 0.0) < 1:
+        raise ValueError("missing_fraction debe estar en [0, 1).")
+    if not 0 < perturbation.get("positive_keep_fraction", 1.0) <= 1:
+        raise ValueError("positive_keep_fraction debe estar en (0, 1].")
+    _columns(perturbation.get("noise_columns", []), "perturbation.noise_columns")
+    if perturbation.get("numeric_noise_std", 0) and not perturbation.get("noise_columns"):
+        raise ValueError("El ruido requiere noise_columns explícitas (variables continuas pertinentes).")
+    optimization = config.get("optimization")
+    if optimization is None:
+        return
+    _mapping(optimization, "optimization", {"n_iter", "cv_folds", "random_state", "scoring", "param_distributions"},
+             {"n_iter", "cv_folds", "random_state", "scoring", "param_distributions"})
+    for key, minimum in (("n_iter", 1), ("cv_folds", 2)):
+        if type(optimization[key]) is not int or optimization[key] < minimum:
+            raise ValueError(f"optimization.{key} debe ser un entero >= {minimum}.")
+    _seed(optimization["random_state"], "optimization.random_state")
+    if optimization["scoring"] not in METRIC_NAMES:
+        raise ValueError(f"optimization.scoring debe pertenecer a {METRIC_NAMES}.")
+    spaces = optimization["param_distributions"]
+    _mapping(spaces, "optimization.param_distributions", set(MODEL_NAMES))
+    if not spaces:
+        raise ValueError("Se necesita al menos un espacio de búsqueda.")
+    for model_name, space in spaces.items():
+        if not isinstance(space, dict) or not space:
+            raise ValueError(f"Espacio de búsqueda vacío o inválido para {model_name}.")
+        for key, values in space.items():
+            if (not isinstance(key, str) or not key or key in ("random_state", "n_jobs")
+                    or any(word in key.lower() for word in ("token", "password", "secret", "apikey", "api_key"))):
+                raise ValueError("La búsqueda no puede alterar semillas, hilos o credenciales.")
+            if not isinstance(values, list) or not values:
+                raise ValueError(f"Los candidatos de {model_name}.{key} deben ser una lista no vacía.")
+            if any(type(value) not in (str, int, float, bool, type(None))
+                   or (type(value) is float and not math.isfinite(value)) for value in values):
+                raise ValueError(f"Candidatos no escalares o no finitos en {model_name}.{key}.")
+
+
+def _columns(value, label):
+    if (not isinstance(value, list) or not all(isinstance(column, str) and column for column in value)
+            or len(set(value)) != len(value)):
+        raise ValueError(f"{label} debe ser una lista de nombres únicos.")
+
+
+def _seed(value, label):
+    if type(value) is not int or not 0 <= value < 2**32:
+        raise ValueError(f"{label} debe ser un entero en [0, 2**32).")
 
 
 def load_config(path):

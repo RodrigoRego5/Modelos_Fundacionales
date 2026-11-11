@@ -3,17 +3,20 @@ dataset:
   path: data/framingham.csv
   target: TenYearCHD
   drop_columns: []
+# Variables discretas codificadas con números en el CSV.
+features:
+  categorical_columns: [male, education, currentSmoker, BPMeds, prevalentStroke, prevalentHyp, diabetes]
 preprocessing:
   numerical_missing: median
   categorical_encoding: one_hot
 split: {test_size: 0.2, random_state: 42}
 evaluation:
-  metrics: [roc_auc, f1, accuracy, recall, pr_auc, balanced_accuracy, precision]
+  metrics: [roc_auc, f1, accuracy, recall, pr_auc, balanced_accuracy, precision, average_precision]
 models:
   lightgbm: {n_estimators: 400, learning_rate: 0.05, verbosity: -1} #scale_pos_weight: 85 / 15
   tabpfn: {}
 tracking:
-  experiment_name: 
-  run_name: 
+  experiment_name: mis_experimentos
+  run_name: nose
 
 

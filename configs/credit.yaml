@@ -8,7 +8,7 @@ preprocessing:
   categorical_encoding: one_hot
 split: {test_size: 0.2, random_state: 42}
 evaluation:
-  metrics: [roc_auc, f1, accuracy, recall, pr_auc, balanced_accuracy, precision]
+  metrics: [roc_auc, f1, accuracy, recall, pr_auc, balanced_accuracy, precision, average_precision]
 models:
   lightgbm: {n_estimators: 200, learning_rate: 0.05, verbosity: -1}
   tabpfn: {}

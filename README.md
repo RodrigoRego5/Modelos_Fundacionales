@@ -1,4 +1,4 @@
-﻿# Comparación de modelos tabulares
+# Comparación de modelos tabulares
 
 ## Introducción
 
@@ -11,6 +11,9 @@ se configuran mediante YAML y las ejecuciones se registran en MLflow local.
 ```text
 app/
   pipeline.py        # Flujo común y punto de entrada
+  batteries.py       # Baterías registradas en MLflow
+  partitions.py      # Particiones compartidas y tamaños de entrenamiento
+  conditions.py      # Selección de variables y perturbaciones
   config.py          # Lectura de configuraciones
   datasets.py        # Carga, limpieza y partición
   preprocessing.py   # Imputación y codificación
@@ -19,7 +22,7 @@ app/
   tracking.py        # Registro en MLflow
   experiments.py     # Entrenamiento desde matrices
   optimization.py    # Optimización de hiperparámetros y umbral
-configs/             # Configuraciones de datasets
+configs/             # Configuraciones de datasets y baterías en batteries/
 data/                # Datasets originales
 docs/                # Especificación del pipeline
 requirements.txt     # Dependencias
@@ -52,6 +55,31 @@ Consultar los experimentos locales en http://localhost:5000:
 ```bash
 mlflow ui --backend-store-uri sqlite:///mlflow.db
 ```
+
+### Baterías de experimentos
+
+Una batería ejecuta las combinaciones de datasets, modelos, semillas, tamaños y
+variantes definidas en un YAML de [configs/batteries/](./configs/batteries/):
+
+```bash
+python -m app.batteries --config configs/batteries/baseline.yaml
+```
+
+Este ejemplo compara LightGBM y TabPFN en Framingham con tres tamaños y cinco
+particiones (30 ejecuciones). Requiere el token de TabPFN indicado arriba.
+`train_sizes` admite enteros como número de filas y decimales como fracciones del
+entrenamiento disponible: `200` son 200 filas y `1.0` usa todo el entrenamiento.
+Los modelos y variantes comparten las mismas particiones; el test se mantiene
+fijo al cambiar de tamaño dentro de cada semilla.
+
+Todo se registra en MLflow: una ejecución padre agrupa las ejecuciones hijas y
+contiene el plan, el resumen y una tabla de resultados. No hay que indicar un
+directorio de salida. Cada invocación crea una batería nueva. El experimento se
+define en `tracking.experiment_name` del YAML de la batería; los nombres de sus
+ejecuciones se generan automáticamente.
+
+La [guía personal de experimentos](./GUIA_EXPERIMENTOS.md) indica qué batería
+usar para cada pregunta de la práctica y cómo analizarla en MLflow.
 
 ### Python
 
@@ -107,7 +135,7 @@ los mismos datos, preprocesamiento, semilla y partición.
 `categorical_encoding` admite `one_hot` u `ordinal`. LightGBM usa `n_jobs: -1`
 por defecto; se puede limitar el número de hilos en `models.lightgbm`.
 
-`tracking.experiment_name` y `tracking.run_name` son obligatorios y se toman
-exclusivamente del YAML. Cada ejecución recibe un identificador único, aunque
-se repita el nombre. MLflow guarda parámetros, métricas y artefactos en la
-base local `mlflow.db` y en `mlruns/`.
+En las ejecuciones individuales, `tracking.experiment_name` y
+`tracking.run_name` son obligatorios y se toman del YAML del dataset. Cada
+ejecución recibe un identificador único, aunque se repita el nombre. MLflow
+guarda parámetros, métricas y artefactos en la base local `mlflow.db` y en `mlruns/`.

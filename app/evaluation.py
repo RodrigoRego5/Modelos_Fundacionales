@@ -11,6 +11,7 @@ from sklearn.metrics import (
     balanced_accuracy_score,
     precision_score
 )
+from sklearn.metrics import average_precision_score
 
 
 def evaluate_model(model, X_test, y_test, threshold=None):
@@ -50,12 +51,18 @@ def binary_metrics(y_test_binary, y_pred_binary, y_prob):
     }
 
 METRIC_NAMES = ("roc_auc", "f1", "accuracy", "recall", "pr_auc",
-                "balanced_accuracy", "precision")
+                "balanced_accuracy", "precision", "average_precision")
 
 
 def evaluate(model, X_test, y_test, metrics):
     predictions = np.asarray(model.predict(X_test)).reshape(-1)
     probabilities = model.predict_proba(X_test)[:, list(model.classes_).index(1)]
+    return evaluate_predictions(y_test, predictions, probabilities, metrics)
+
+
+def evaluate_predictions(y_test, predictions, probabilities, metrics):
+    """Calcula métricas sin inferencia, para medir ambos costes por separado."""
     scores = binary_metrics(y_test, predictions, probabilities)
     scores["accuracy"] = accuracy_score(y_test, predictions)
+    scores["average_precision"] = average_precision_score(y_test, probabilities)
     return {name: float(scores[name]) for name in metrics}

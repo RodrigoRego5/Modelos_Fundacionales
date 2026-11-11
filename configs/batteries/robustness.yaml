@@ -1,0 +1,26 @@
+name: calidad_entrenamiento
+datasets: [configs/framingham.yaml]
+models: [lightgbm, tabpfn]
+split_seeds: [11, 22, 33]
+train_sizes: [1.0]
+sampling_seed: 123
+model_seed: 42
+model_params:
+  lightgbm: {n_estimators: 400, learning_rate: 0.05, n_jobs: 4}
+  tabpfn: {n_estimators: 4}
+# Todas las perturbaciones se aplican a train; el test conserva sus datos originales.
+variants:
+  - name: referencia
+  - name: ausentes_10
+    perturbation: {missing_fraction: 0.1, seed: 123}
+  - name: ausentes_30
+    perturbation: {missing_fraction: 0.3, seed: 123}
+  - name: ruido_20
+    perturbation:
+      numeric_noise_std: 0.2
+      noise_columns: [sysBP, diaBP, BMI, totChol, glucose]
+      seed: 123
+  - name: menos_positivos
+    perturbation: {positive_keep_fraction: 0.5, seed: 123}
+tracking:
+  experiment_name: practica_06_robustez

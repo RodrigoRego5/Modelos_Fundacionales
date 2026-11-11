@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from time import perf_counter
+from copy import deepcopy
+from math import prod
 
 import mlflow
 import numpy as np
@@ -16,6 +18,67 @@ from sklearn.model_selection import (
 
 from .evaluation import binary_metrics, evaluate_model
 from .preprocessing import build_dataset_pipeline
+from .preprocessing import build_preprocessing
+from .conditions import apply_training_conditions
+from .evaluation import evaluate_predictions
+from .models import build_model
+
+
+def search_folds(X, y, config, model_name):
+    """Valida el diseño de búsqueda sin instanciar modelos ni consultar test."""
+    settings = config["optimization"]
+    if model_name not in settings["param_distributions"]:
+        raise ValueError(f"Falta el espacio de búsqueda para {model_name}.")
+    if y.value_counts().min() < settings["cv_folds"]:
+        raise ValueError("Cada clase de entrenamiento necesita al menos cv_folds ejemplos.")
+    cv = StratifiedKFold(n_splits=settings["cv_folds"], shuffle=True,
+                        random_state=settings["random_state"])
+    return list(cv.split(X, y))
+
+
+def search_hyperparameters(X, y, config, model_name, *, on_candidate=None):
+    """Búsqueda acotada sobre train crudo; ningún argumento permite acceder a test.
+
+    Cada fold ajusta su propia perturbación, imputación y codificación. El modelo
+    final se ajusta después en run_pipeline, utilizando los parámetros elegidos.
+    """
+    settings = config["optimization"]
+    folds = search_folds(X, y, config, model_name)
+    space = settings["param_distributions"][model_name]
+    n_candidates = min(settings["n_iter"], prod(len(values) for values in space.values()))
+    candidates = ParameterSampler(space, n_iter=n_candidates, random_state=settings["random_state"])
+    history = []
+    for index, params in enumerate(candidates, start=1):
+        started = perf_counter()
+        candidate_config = deepcopy(config)
+        candidate_config.setdefault("models", {}).setdefault(model_name, {}).update(params)
+        scores = []
+        for train_indices, validation_indices in folds:
+            fold_X, fold_y, _ = apply_training_conditions(
+                X.iloc[train_indices], y.iloc[train_indices], config.get("perturbation", {})
+            )
+            transformer = build_preprocessing(config)
+            train = transformer.fit_transform(fold_X)
+            validation = transformer.transform(X.iloc[validation_indices])
+            estimator = build_model(model_name, candidate_config)
+            estimator.fit(train, fold_y)
+            predictions = estimator.predict(validation)
+            probabilities = estimator.predict_proba(validation)[:, list(estimator.classes_).index(1)]
+            scores.append(evaluate_predictions(y.iloc[validation_indices], predictions, probabilities,
+                                              [settings["scoring"]])[settings["scoring"]])
+        result = {"index": index, "params": params, "fold_scores": scores,
+                  "mean": float(np.mean(scores)), "std": float(np.std(scores)),
+                  "duration_seconds": perf_counter() - started}
+        history.append(result)
+        if on_candidate is not None:
+            on_candidate(result)
+    # Empates: primer candidato del orden reproducible, sin consultar test.
+    best = max(history, key=lambda candidate: candidate["mean"])
+    return {"best_params": best["params"], "best_cv_score": best["mean"],
+            "scoring": settings["scoring"], "n_candidates": len(history),
+            "cv_folds": len(folds), "candidates": history,
+            "cv_splits": [{"train": X.index[train].tolist(), "validation": X.index[valid].tolist()}
+                          for train, valid in folds]}
 
 
 def optimize_threshold(y_true, probabilities, min_precision=0.30):
