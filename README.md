@@ -78,13 +78,9 @@ directorio de salida. Cada invocación crea una batería nueva. El experimento s
 define en `tracking.experiment_name` del YAML de la batería; los nombres de sus
 ejecuciones se generan automáticamente.
 
-La [guía personal de experimentos](./GUIA_EXPERIMENTOS.md) indica qué batería
-usar para cada pregunta de la práctica y cómo analizarla en MLflow.
-
 ### Optimización del umbral
 
-El pipeline admite un bloque opcional `threshold_optimization`, independiente de
-`optimization`. Puede ponerse en el YAML del dataset o en una variante de la
+Además de la optimización de hiperparametros, el pipeline admite un bloque opcional `threshold_optimization`, independiente de `optimization`. Puede ponerse en el YAML del dataset o en una variante de la
 batería. En [tuning.yaml](./configs/batteries/tuning.yaml) se activa en `ajustado`:
 
 ```yaml
@@ -105,30 +101,6 @@ el modelo final con todo el entrenamiento disponible. El test externo se usa
 únicamente para la evaluación final. La puntuación OOF es un criterio de selección,
 no una estimación independiente del rendimiento tras seleccionar hiperparámetros.
 El ajuste de umbral añade `cv_folds` entrenamientos por ejecución que lo active.
-
-También se admite `scoring: recall` con `min_precision: 0.30`: maximiza recall
-exigiendo esa precisión mínima en OOF; no garantiza alcanzarla en test. Si ningún
-umbral satisface la restricción, la ejecución falla con un error explícito.
-`min_precision` también puede restringir la búsqueda por F1. Eliminar el bloque
-o poner `threshold_optimization: null` conserva las predicciones originales.
-Para ajustar solo el umbral, combinarlo con `optimization: null`.
-
-En MLflow, `decision_threshold` es un parámetro; `f1`, `recall`, `precision` y las
-demás métricas habituales corresponden a la evaluación con el umbral elegido.
-Las métricas `default_threshold_f1`, `default_threshold_recall`, etc. conservan
-la evaluación del mismo modelo con su decisión original. Las métricas basadas
-solo en probabilidades (ROC-AUC y average precision) no cambian al mover el umbral.
-`threshold_oof_score` guarda el criterio de selección y `threshold_search_seconds`
-su coste. `duration_seconds` incluye ambos ajustes; `search_seconds` sigue
-midiendo únicamente la búsqueda de hiperparámetros.
-
-El artefacto `threshold_search.json` conserva el umbral, la curva F1/precisión/recall,
-las predicciones OOF y sus particiones. Los resúmenes también se incorporan a
-`result.json` y al `results.csv` del padre. `predictions.csv` contiene `y_pred`
-con el umbral elegido y `y_pred_default` con la decisión original. El objeto
-`model` devuelto mantiene su método `predict()` original; para reproducir las
-decisiones ajustadas, comparar la probabilidad de la clase 1 con
-`resultado["threshold_optimization"]["threshold"]` usando `>=`.
 
 ### Python
 
